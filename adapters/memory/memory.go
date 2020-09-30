@@ -108,9 +108,7 @@ func (a *Memory) ExpiresIn(key string) uint64 {
 			return uint64(d)
 		}
 
-		mutex.Lock()
 		a.Delete(key)
-		mutex.Unlock()
 	}
 
 	return 0
