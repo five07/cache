@@ -15,15 +15,15 @@ type Config struct {
 }
 
 var (
-	lock     sync.RWMutex
+	mutex    sync.RWMutex
 	store    = make(map[string]Cache)
 	registry = make(map[string]Cache)
 )
 
 // Register func
 func Register(name string, adapter Cache) {
-	lock.Lock()
-	defer lock.Unlock()
+	mutex.Lock()
+	defer mutex.Unlock()
 	if adapter == nil {
 		panic("cache: Register adapter is nil")
 	}
@@ -41,12 +41,15 @@ func (lib Library) Get(key string) Cache {
 	cache, ok = store[key]
 
 	if !ok {
-		lock.RLock()
+		mutex.RLock()
 		adapter, ok := registry[lib.Config.AdapterName]
-		lock.RUnlock()
+		mutex.RUnlock()
 		if !ok {
 			panic("cache: unknown adapter " + lib.Config.AdapterName + " (forgotten import?)")
 		}
+
+		mutex.Lock()
+		defer mutex.Unlock()
 
 		cache = adapter.(Cache)
 		cache.Init()
