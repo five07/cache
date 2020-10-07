@@ -10,20 +10,18 @@ import (
 
 // AdapterName must be unique
 const AdapterName = "memory"
-const defaultTTL = 3600
 
-var mutex sync.RWMutex
-
-// CacheValue type
-type CacheValue struct {
+// Item type
+type Item struct {
 	data       interface{}
-	expiration time.Time
+	expiration int64
 }
 
 // Memory cache type
 type Memory struct {
 	Config interface{}
-	store  map[string]CacheValue
+	store  map[string]Item
+	mutex  sync.RWMutex
 }
 
 func init() {
@@ -32,14 +30,14 @@ func init() {
 
 // Init func
 func (a *Memory) Init() {
-	a.store = make(map[string]CacheValue)
+	a.store = make(map[string]Item)
 }
 
 // Keys func
 func (a *Memory) Keys() []string {
-	mutex.RLock()
+	a.mutex.RLock()
 	keys := reflect.ValueOf(a.store).MapKeys()
-	mutex.RUnlock()
+	a.mutex.RUnlock()
 
 	result := make([]string, 0, len(keys))
 	for _, k := range keys {
@@ -49,67 +47,83 @@ func (a *Memory) Keys() []string {
 	return result
 }
 
-func (a *Memory) exists(key string) bool {
-	mutex.RLock()
-	_, exists := a.store[key]
-	mutex.RUnlock()
+// Has func
+func (a *Memory) Has(key string) bool {
+	_, exists := a.Get(key)
 	return exists
 }
 
-// Has func
-func (a *Memory) Has(key string) bool {
-	return a.ExpiresIn(key) > 0
-}
-
 // Get func
-func (a *Memory) Get(key string) interface{} {
-	if a.Has(key) && a.ExpiresIn(key) > 0 {
-		mutex.RLock()
-		defer mutex.RUnlock()
-		return a.store[key].data
+func (a *Memory) Get(key string) (interface{}, bool) {
+	a.mutex.RLock()
+
+	item, exists := a.store[key]
+	if !exists {
+		a.mutex.RUnlock()
+		return nil, false
 	}
 
-	return nil
+	if a.expired(&item) {
+		a.mutex.RUnlock()
+		return nil, false
+	}
+
+	a.mutex.RUnlock()
+	return item.data, true
 }
 
 // Set func
-func (a *Memory) Set(key string, value interface{}, ttl uint64) {
-	if ttl == 0 {
-		ttl = defaultTTL
+func (a *Memory) Set(key string, value interface{}, ttl time.Duration) {
+	var exp int64
+
+	if ttl > 0 {
+		exp = time.Now().Add(ttl).UnixNano()
 	}
 
-	mutex.Lock()
-	a.store[key] = CacheValue{value, time.Now().Add(time.Second * time.Duration(ttl))}
-	mutex.Unlock()
+	a.mutex.Lock()
+	a.store[key] = Item{value, exp}
+	a.mutex.Unlock()
 }
 
 // Delete func
 func (a *Memory) Delete(key string) {
-	mutex.Lock()
+	a.mutex.Lock()
 	delete(a.store, key)
-	mutex.Unlock()
+	a.mutex.Unlock()
 }
 
 // Clear func
 func (a *Memory) Clear() {
-	mutex.Lock()
-	a.store = make(map[string]CacheValue)
-	mutex.Unlock()
+	a.mutex.Lock()
+	a.store = make(map[string]Item)
+	a.mutex.Unlock()
 }
 
 // ExpiresIn func
-func (a *Memory) ExpiresIn(key string) uint64 {
-	if a.exists(key) {
-		mutex.RLock()
-		d := a.store[key].expiration.Sub(time.Now()).Seconds()
-		mutex.RUnlock()
+func (a *Memory) ExpiresIn(key string) time.Time {
+	a.mutex.RLock()
 
-		if d > 0 {
-			return uint64(d)
-		}
-
-		a.Delete(key)
+	item, exists := a.store[key]
+	if !exists {
+		a.mutex.RUnlock()
+		return time.Time{}
 	}
 
-	return 0
+	if a.expired(&item) {
+		a.mutex.RUnlock()
+		return time.Time{}
+	}
+
+	a.mutex.RUnlock()
+	return time.Unix(0, item.expiration)
+}
+
+func (a *Memory) expired(item *Item) bool {
+	if item.expiration > 0 {
+		if time.Now().UnixNano() > item.expiration {
+			return true
+		}
+	}
+
+	return false
 }
