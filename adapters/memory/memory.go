@@ -101,20 +101,11 @@ func (a *Memory) Clear() {
 
 // ExpiresIn func
 func (a *Memory) ExpiresIn(key string) time.Time {
-	a.mutex.RLock()
-
-	item, exists := a.store[key]
+	item, exists := a.Get(key)
 	if !exists {
-		a.mutex.RUnlock()
 		return time.Time{}
 	}
 
-	if a.expired(&item) {
-		a.mutex.RUnlock()
-		return time.Time{}
-	}
-
-	a.mutex.RUnlock()
 	return time.Unix(0, item.expiration)
 }
 
