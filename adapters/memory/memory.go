@@ -101,12 +101,12 @@ func (a *Memory) Clear() {
 
 // ExpiresIn func
 func (a *Memory) ExpiresIn(key string) time.Time {
-	item, exists := a.Get(key)
+	_, exists := a.Get(key)
 	if !exists {
 		return time.Time{}
 	}
 
-	return time.Unix(0, item.expiration)
+	return time.Unix(0, a.store[key].expiration)
 }
 
 func (a *Memory) expired(item *Item) bool {
